@@ -26,9 +26,9 @@ function junitTotals() {
   const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((file) => file.endsWith('.xml')) : [];
   return files.map((file) => {
     const xml = fs.readFileSync(path.join(dir, file), 'utf8');
-    const root = /<testsuites?\b[^>]*>/.exec(xml)?.[0] ?? '';
-    const attrs = Object.fromEntries([...root.matchAll(/(\w+)="([^"]*)"/g)].map(([, key, value]) => [key, Number(value) || 0]));
-    return { file, tests: attrs.tests ?? 0, failures: (attrs.failures ?? 0) + (attrs.errors ?? 0) };
+    const root = xml.slice(xml.indexOf('<testsuite'), xml.indexOf('>', xml.indexOf('<testsuite')) + 1);
+    const count = (pattern) => Number(pattern.exec(root)?.[1] ?? 0);
+    return { file, tests: count(/ tests="(\d+)"/), failures: count(/ failures="(\d+)"/) + count(/ errors="(\d+)"/) };
   });
 }
 

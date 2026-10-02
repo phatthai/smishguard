@@ -26,7 +26,7 @@ const MAX_SCORE = 100;
 
 const SCHEME = /^https?:\/\//;
 const LEADING_PUNCTUATION = /^[(<[{'"]+/;
-const TRAILING_PUNCTUATION = /[)\]}>.,;:!?'"]+$/;
+const TRAILING_PUNCTUATION = new Set([')', ']', '}', '>', '.', ',', ';', ':', '!', '?', "'", '"']);
 const HOST_LABEL = /^[a-z0-9-]+$/;
 const ALPHA_TLD = /^[a-z]{2,}$/;
 const DIGITS = /^\d{1,3}$/;
@@ -124,12 +124,21 @@ function parseLink(token) {
   };
 }
 
+/** Removes trailing punctuation in linear time (a regex like /[.,!?]+$/ can backtrack quadratically). */
+function trimTrailingPunctuation(token) {
+  let end = token.length;
+  while (end > 0 && TRAILING_PUNCTUATION.has(token[end - 1])) {
+    end -= 1;
+  }
+  return token.slice(0, end);
+}
+
 /** Splits text into links and the remaining words. */
 function tokenise(lowerText) {
   const links = [];
   const words = [];
   for (const raw of lowerText.split(/\s+/)) {
-    const token = raw.replace(LEADING_PUNCTUATION, '').replace(TRAILING_PUNCTUATION, '');
+    const token = trimTrailingPunctuation(raw.replace(LEADING_PUNCTUATION, ''));
     const link = parseLink(token);
     if (link) {
       links.push(link);

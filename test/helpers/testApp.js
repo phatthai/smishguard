@@ -8,8 +8,9 @@ const { createMetrics } = require('../../src/metrics');
 const { openDatabase } = require('../../src/db/database');
 const { createApp } = require('../../src/app');
 
-const TEST_SECRET = 'test-only-secret-that-is-long-enough-for-hs256-signing';
-const TEST_PASSWORD = 'CorrectHorse42!';
+// Generated per test run so no credential is ever hard-coded in the repository.
+const TEST_SECRET = crypto.randomBytes(32).toString('hex');
+const TEST_PASSWORD = `Pw-${crypto.randomUUID()}`;
 
 /** Builds the real application against a fresh in-memory database. */
 function buildTestApp(env = {}) {
