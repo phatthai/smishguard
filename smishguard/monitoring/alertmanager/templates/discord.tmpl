@@ -1,0 +1,14 @@
+{{ define "smishguard.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}{{ if .CommonLabels.env }} ({{ .CommonLabels.env }}){{ end }}
+{{- end }}
+
+{{ define "smishguard.message" -}}
+{{ range .Alerts -}}
+{{ if eq .Status "firing" }}**FIRING**{{ else }}**RESOLVED**{{ end }} {{ .Annotations.summary }}
+{{ .Annotations.description }}
+Severity: `{{ .Labels.severity }}` | Category: `{{ .Labels.category }}` | Started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}{{ if eq .Status "resolved" }} | Resolved: {{ .EndsAt.Format "15:04:05 MST" }}{{ end }}
+Runbook: {{ .Annotations.runbook_url }}
+Dashboard: http://localhost:3030/d/smishguard-overview
+
+{{ end -}}
+{{- end }}
