@@ -1,0 +1,90 @@
+# SmishGuard observability stack: Prometheus (metrics + alert rules), Alertmanager
+# (routing to Discord), Blackbox exporter (external uptime probes) and Grafana
+# (dashboards). Started and verified by the Monitoring stage:
+#   docker compose -p smishguard-monitoring -f monitoring/docker-compose.yml up -d --build --wait
+name: smishguard-monitoring
+
+services:
+  prometheus:
+    build: ./prometheus
+    image: smishguard/prometheus:local
+    container_name: smishguard-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+    networks:
+      - observability
+    restart: unless-stopped
+
+  alertmanager:
+    build: ./alertmanager
+    image: smishguard/alertmanager:local
+    container_name: smishguard-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:9093
+    ports:
+      - "9093:9093"
+    secrets:
+      - discord_webhook_url
+    volumes:
+      - alertmanager-data:/alertmanager
+    networks:
+      - observability
+    restart: unless-stopped
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: smishguard-blackbox
+    networks:
+      - observability
+    restart: unless-stopped
+
+  grafana:
+    build: ./grafana
+    image: smishguard/grafana:local
+    container_name: smishguard-grafana
+    ports:
+      - "3030:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (Jenkins credential grafana-admin-password)}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/smishguard-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - observability
+    depends_on:
+      - prometheus
+      - alertmanager
+    restart: unless-stopped
+
+secrets:
+  discord_webhook_url:
+    environment: DISCORD_WEBHOOK_URL
+
+volumes:
+  prometheus-data:
+    name: smishguard-prometheus-data
+  alertmanager-data:
+    name: smishguard-alertmanager-data
+  grafana-data:
+    name: smishguard-grafana-data
+
+networks:
+  observability:
+    name: smishguard-observability
+    external: true

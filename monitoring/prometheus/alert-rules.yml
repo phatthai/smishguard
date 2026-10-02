@@ -1,0 +1,124 @@
+# SmishGuard alert rules. Each alert maps to a runbook section in docs/RUNBOOK.md.
+# Severity "critical" pages on-call immediately; "warning" goes to the ops channel.
+groups:
+  - name: smishguard.availability
+    rules:
+      - alert: SmishGuardDown
+        expr: up{job="smishguard"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} for more than 30 seconds."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguarddown"
+
+      # Waits longer than SmishGuardDown so that, when the whole instance is down,
+      # Alertmanager's inhibition rule suppresses this symptom alert instead of paging twice.
+      - alert: SmishGuardHealthCheckFailing
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} health check is failing"
+          description: "The external probe of {{ $labels.instance }} has failed for more than 1 minute."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardhealthcheckfailing"
+
+      - alert: SmishGuardDatabaseUnavailable
+        expr: smishguard_database_up{job="smishguard"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} cannot reach its database"
+          description: "The readiness probe reports the SQLite database as unavailable."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguarddatabaseunavailable"
+
+  - name: smishguard.slo
+    rules:
+      - record: smishguard:http_requests:rate5m
+        expr: sum by (env) (rate(http_requests_total{job="smishguard"}[5m]))
+
+      - record: smishguard:http_request_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (le, env) (rate(http_request_duration_seconds_bucket{job="smishguard"}[5m])))
+
+      - alert: SmishGuardHighErrorRate
+        expr: |
+          (
+            sum by (env) (rate(http_requests_total{job="smishguard",status_code=~"5.."}[2m]))
+            /
+            sum by (env) (rate(http_requests_total{job="smishguard"}[2m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: slo
+        annotations:
+          summary: "More than 5% of SmishGuard {{ $labels.env }} requests are failing"
+          description: "{{ $value | humanizePercentage }} of requests returned a 5xx error over the last 2 minutes."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardhigherrorrate"
+
+      - alert: SmishGuardHighLatency
+        expr: smishguard:http_request_duration_seconds:p95_5m > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: slo
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} is slow"
+          description: "95th percentile latency is {{ $value | humanizeDuration }} (objective: under 500ms)."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardhighlatency"
+
+  - name: smishguard.security
+    rules:
+      - alert: SmishGuardSuspiciousLoginActivity
+        expr: sum by (env) (rate(smishguard_auth_logins_total{job="smishguard",result=~"failure|rate_limited"}[1m])) * 60 > 20
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Possible brute-force or credential-stuffing attack on SmishGuard {{ $labels.env }}"
+          description: "{{ $value | humanize }} failed or blocked logins per minute (threshold: 20)."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardsuspiciousloginactivity"
+
+  - name: smishguard.business
+    rules:
+      - alert: SmishGuardScamCampaignSuspected
+        expr: sum by (env) (increase(smishguard_checks_total{job="smishguard",risk_level="high"}[5m])) > 15
+        for: 1m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Surge of high-risk scam messages on SmishGuard {{ $labels.env }}"
+          description: "{{ $value | humanize }} high-risk messages were checked or reported in 5 minutes. A new scam campaign may be circulating."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardscamcampaignsuspected"
+
+  - name: smishguard.runtime
+    rules:
+      - alert: SmishGuardHighMemoryUsage
+        expr: process_resident_memory_bytes{job="smishguard"} > 200 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} memory usage is high"
+          description: "Resident memory is {{ $value | humanize1024 }}B, close to the container limit."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardhighmemoryusage"
+
+      - alert: SmishGuardEventLoopLag
+        expr: nodejs_eventloop_lag_p99_seconds{job="smishguard"} > 0.2
+        for: 2m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "SmishGuard {{ $labels.env }} event loop is blocked"
+          description: "p99 event loop lag is {{ $value | humanizeDuration }}; requests are queuing."
+          runbook_url: "https://github.com/phatthai/smishguard/blob/main/docs/RUNBOOK.md#smishguardeventlooplag"

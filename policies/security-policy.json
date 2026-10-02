@@ -1,0 +1,7 @@
+{
+  "description": "SmishGuard security gate policy. Findings at these severities block the pipeline. Leaked secrets always block. Vulnerabilities with no published fix are tracked instead of blocking and re-checked on every build.",
+  "owner": "Tien Phat Thai",
+  "failOn": ["critical", "high"],
+  "failOnUnfixedVulnerabilities": false,
+  "exceptions": []
+}
