@@ -74,7 +74,12 @@ function run(command, args = [], options = {}) {
   if (!quiet) {
     console.log(`$ ${redact([command, ...args].map(quoteArg).join(' '))}`);
   }
-  const result = spawnSync(command, args, spawnOptions(options, command));
+  const spawnOpts = spawnOptions(options, command);
+  // With shell: true, Node 24 warns (DEP0190) if arguments are passed separately, so they are
+  // joined into one quoted command line. Only npm/npx on Windows take this path.
+  const result = spawnOpts.shell
+    ? spawnSync([command, ...args.map(quoteArg)].join(' '), spawnOpts)
+    : spawnSync(command, args, spawnOpts);
   if (result.error) {
     throw new Error(`Could not run "${command}": ${result.error.message}`);
   }

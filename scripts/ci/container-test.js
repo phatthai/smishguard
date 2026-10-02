@@ -7,7 +7,7 @@
  *   node scripts/ci/container-test.js --image <image> --version <expected version>
  */
 const crypto = require('node:crypto');
-const { banner, info, run, http, waitFor, parseArgs, requireEnv, writeJUnit, registerSecret, main } = require('./lib');
+const { banner, info, run, http, waitFor, parseArgs, parseJson, requireEnv, writeJUnit, registerSecret, main } = require('./lib');
 
 const MAX_IMAGE_MB = 250;
 
@@ -15,9 +15,19 @@ function inspect(target, format, kind = 'container') {
   return run('docker', [kind, 'inspect', '--format', format, target], { capture: true, quiet: true }).stdout;
 }
 
+/** Reads the host port Docker assigned to container port 3000 (JSON parsing works the same on Windows and Linux). */
 function publishedPort(name) {
-  const mapping = run('docker', ['port', name, '3000/tcp'], { capture: true, quiet: true }).stdout.split('\n')[0];
-  return mapping.slice(mapping.lastIndexOf(':') + 1);
+  const res = run('docker', ['inspect', '--format', '{{json .NetworkSettings.Ports}}', name], { check: false, capture: true, quiet: true });
+  const bindings = parseJson(res.stdout)?.['3000/tcp'] ?? [];
+  return bindings.map((binding) => binding.HostPort).find((port) => /^\d+$/.test(port ?? '')) ?? null;
+}
+
+async function waitForPort(name) {
+  const { value } = await waitFor('Docker to publish port 3000', async () => {
+    const port = publishedPort(name);
+    return { ok: Boolean(port), detail: port ?? 'no host port yet', value: port };
+  }, { timeoutMs: 30000, intervalMs: 1000 });
+  return value;
 }
 
 function createChecker() {
@@ -45,11 +55,12 @@ async function getJson(url) {
 }
 
 async function runChecks({ check }, { name, image, expectedVersion }) {
-  const base = `http://127.0.0.1:${publishedPort(name)}`;
   await check('container becomes healthy (Docker HEALTHCHECK)', () => waitFor('healthy container', async () => {
     const status = inspect(name, '{{.State.Health.Status}}');
     return { ok: status === 'healthy', detail: status };
   }, { timeoutMs: 90000 }).then(() => 'healthy'));
+  const base = `http://127.0.0.1:${await waitForPort(name)}`;
+  info(`Container API published at ${base}`);
   await check('GET /health returns 200', async () => (await getJson(`${base}/health`)).status);
   await check('GET /ready reports the database as up', async () => {
     const body = await getJson(`${base}/ready`);
